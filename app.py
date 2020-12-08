@@ -4,8 +4,8 @@ from flask import Flask, render_template, request, flash, redirect, session, g
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
-from forms import UserAddForm, LoginForm, MessageForm
-from models import db, connect_db, User, Message
+from forms import UserAddForm, LoginForm, MessageForm, EditUserForm
+from models import db, connect_db, User, Message, Likes
 
 CURR_USER_KEY = "curr_user"
 
@@ -142,7 +142,7 @@ def list_users():
 
     return render_template('users/index.html', users=users)
 
-# TODO:
+# TODO: add like buttons to messages
 @app.route('/users/<int:user_id>')
 def users_show(user_id):
     """Show user profile."""
@@ -157,7 +157,7 @@ def users_show(user_id):
                 .order_by(Message.timestamp.desc())
                 .limit(100)
                 .all())
-    return render_template('users/show.html', user=user, messages=messages)
+    return render_template('users/show.html', user=user, messages=messages, userID = session[CURR_USER_KEY])
 
 
 @app.route('/users/<int:user_id>/following')
@@ -213,12 +213,48 @@ def stop_following(follow_id):
 
     return redirect(f"/users/{g.user.id}/following")
 
-
+# TODO:
 @app.route('/users/profile', methods=["GET", "POST"])
 def profile():
     """Update profile for current user."""
 
-    # IMPLEMENT THIS
+    # IMPLEMENT THIS 
+    user_num = session[CURR_USER_KEY] 
+
+    if not user_num:
+        flash('Must be logged in to view this page')
+        return redirect('/login')
+
+    form = EditUserForm(request.form)
+    user = User.query.get_or_404(user_num)
+    
+    if form.validate_on_submit():
+        # handle post request
+        
+        #confirm password is correct
+        if not User.authenticate(user.username, form.password.data):
+            flash ("Password incorrect. Type in current password to update", 'danger')
+            return redirect('/users/profile')
+
+        #Confirm new username doesn't exist
+        user.username = form.username.data
+        user.email = form.email.data
+        user.bio = form.bio.data
+        user.image_url = form.image_url.data
+        user.header_image_url = form.header_image_url.data
+        
+        db.session.commit()
+
+        return redirect(f'/users/{user_num}')
+    
+    else:
+        form.username.data = user.username
+        form.email.data = user.email
+        form.bio.data = user.bio
+        form.image_url.data = user.image_url
+        form.header_image_url.data = user.header_image_url
+
+        return render_template('users/edit-profile.html', form=form)
 
 
 @app.route('/users/delete', methods=["POST"])
@@ -297,18 +333,54 @@ def homepage():
     - anon users: no messages
     - logged in: 100 most recent messages of followed_users
     """
-
+    
+    # TODO:
     if g.user:
-        messages = (Message
-                    .query
-                    .order_by(Message.timestamp.desc())
-                    .limit(100)
-                    .all())
+        following_ids = [f.id for f in g.user.following]
+        following_ids.append(g.user.id)
+        likes = [l.id for l in g.user.likes]
+        
+        messages = (Message.query.filter(Message.user_id.in_(following_ids)).order_by(Message.timestamp.desc()).limit(100).all())
 
-        return render_template('home.html', messages=messages)
+        return render_template('home.html', messages=messages, userID = session[CURR_USER_KEY], likes=likes)
 
     else:
         return render_template('home-anon.html')
+
+
+# TODO: Add liked post to database
+# FIXME: prevent page refresh & remain on current page (for better UE)
+@app.route('/users/add_like/<int:msg_id>', methods=["POST"])
+def handle_new_likes(msg_id):
+    msg = Message.query.get_or_404(msg_id)
+    likes = [l.id for l in g.user.likes]
+    
+    if msg_id in likes:
+        liked_msg = Likes.query.filter_by(message_id = msg_id).first()
+        db.session.delete(liked_msg)
+        db.session.commit()
+        return redirect(f'/users/{session[CURR_USER_KEY]}/likes')    
+
+    else: 
+        new_like = Likes(user_id=session[CURR_USER_KEY], message_id=msg_id) 
+        db.session.add(new_like)
+        db.session.commit()
+
+        return redirect(f'/users/{session[CURR_USER_KEY]}/likes')
+
+
+
+# TODO: handle page showing posts user has liked
+@app.route('/users/<userID>/likes')
+def get_likes_page(userID):
+    user = User.query.get_or_404(userID)
+
+    likes = [l.id for l in g.user.likes]
+    print(f'likes_ids = {likes}')
+    messages = (Message.query.filter(Message.id.in_(likes)).order_by(Message.timestamp.desc()).all())
+    print(f'Messages = {messages}')
+    return render_template('users/likes.html', user=user, messages=messages, likes=likes)
+
 
 
 ##############################################################################
