@@ -101,7 +101,7 @@ def login():
     if form.validate_on_submit():
         user = User.authenticate(form.username.data,
                                  form.password.data)
-
+        
         if user:
             do_login(user)
             flash(f"Hello, {user.username}!", "success")
@@ -142,12 +142,12 @@ def list_users():
 
     return render_template('users/index.html', users=users)
 
-# TODO: add like buttons to messages
 @app.route('/users/<int:user_id>')
 def users_show(user_id):
     """Show user profile."""
 
     user = User.query.get_or_404(user_id)
+    userID = session[CURR_USER_KEY]
 
     # snagging messages in order from the database;
     # user.messages won't be in order by default
@@ -157,7 +157,8 @@ def users_show(user_id):
                 .order_by(Message.timestamp.desc())
                 .limit(100)
                 .all())
-    return render_template('users/show.html', user=user, messages=messages, userID = session[CURR_USER_KEY])
+    
+    return render_template('users/show.html', user=user, messages=messages, userID = userID)
 
 
 @app.route('/users/<int:user_id>/following')
@@ -303,7 +304,7 @@ def messages_add():
 def messages_show(message_id):
     """Show a message."""
 
-    msg = Message.query.get(message_id)
+    msg = Message.query.get_or_404(message_id)
     return render_template('messages/show.html', message=msg)
 
 
@@ -315,7 +316,11 @@ def messages_destroy(message_id):
         flash("Access unauthorized.", "danger")
         return redirect("/")
 
-    msg = Message.query.get(message_id)
+    msg = Message.query.get_or_404(message_id)
+    if msg.user_id != g.user.id:
+        flash("Access unauthorized.", "danger")
+        return redirect("/")
+
     db.session.delete(msg)
     db.session.commit()
 
@@ -376,9 +381,7 @@ def get_likes_page(userID):
     user = User.query.get_or_404(userID)
 
     likes = [l.id for l in g.user.likes]
-    print(f'likes_ids = {likes}')
     messages = (Message.query.filter(Message.id.in_(likes)).order_by(Message.timestamp.desc()).all())
-    print(f'Messages = {messages}')
     return render_template('users/likes.html', user=user, messages=messages, likes=likes)
 
 

@@ -52,7 +52,6 @@
               <p>{{ msg.text }}</p>
             </div>
 
-            <!-- TODO: change graphic if post is liked-->
             {% if userID != msg.user.id %}
               <form method="POST" action="/users/add_like/{{ msg.id }}" id="messages-form">
                 <button class="
